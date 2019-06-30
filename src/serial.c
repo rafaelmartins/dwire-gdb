@@ -372,7 +372,8 @@ dg_serial_port_read_word(dg_serial_port_t *sp, dg_error_t **err)
 
 
 int
-dg_serial_port_write(dg_serial_port_t *sp, uint8_t *buf, size_t len, dg_error_t **err)
+dg_serial_port_write(dg_serial_port_t *sp, const uint8_t *buf, size_t len,
+    dg_error_t **err)
 {
     if (sp == NULL || err == NULL || *err != NULL)
         return -1;

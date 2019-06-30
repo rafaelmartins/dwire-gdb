@@ -143,7 +143,10 @@ main(int argc, char **argv)
             printf("Target device: %s\n", dev->name);
     }
     else if (fuses) {
-
+        char *f = dg_debugwire_get_fuses(sp, &err);
+        if (f != NULL || err == NULL)
+            printf("Target device fuses: %s\n", f);
+        free(f);
     }
     else if (disable) {
         if (dg_debugwire_disable(sp, &err) && err == NULL)

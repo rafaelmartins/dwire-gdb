@@ -29,6 +29,6 @@ int dg_serial_port_read(dg_serial_port_t *sp, uint8_t *buf, size_t len,
     dg_error_t **err);
 uint8_t dg_serial_port_read_byte(dg_serial_port_t *sp, dg_error_t **err);
 uint16_t dg_serial_port_read_word(dg_serial_port_t *sp, dg_error_t **err);
-int dg_serial_port_write(dg_serial_port_t *sp, uint8_t *buf, size_t len,
+int dg_serial_port_write(dg_serial_port_t *sp, const uint8_t *buf, size_t len,
     dg_error_t **err);
 bool dg_serial_port_write_byte(dg_serial_port_t *sp, uint8_t b, dg_error_t **err);
