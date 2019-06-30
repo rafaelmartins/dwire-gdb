@@ -140,7 +140,7 @@ serial_open(const char *device, uint32_t baudrate, dg_error_t **err)
 
     struct termios2 cfg = {
         .c_cflag = BOTHER | CS8 | CLOCAL,
-        .c_iflag = IGNPAR | IGNBRK,
+        .c_iflag = IGNPAR,
         .c_oflag = 0,
         .c_lflag = 0,
         .c_ispeed = baudrate,

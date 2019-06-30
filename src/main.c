@@ -63,6 +63,9 @@ main(int argc, char **argv)
     int rv = 0;
     dg_error_t *err = NULL;
 
+    bool identify = false;
+    bool fuses = false;
+    bool disable = false;
     bool debug = false;
 
     char *serial_port = NULL;
@@ -83,14 +86,14 @@ main(int argc, char **argv)
                     printf("%s\n", PACKAGE_STRING);
                     goto cleanup;
                 case 'i':
-                    // TODO
-                    goto cleanup;
+                    identify = true;
+                    break;
                 case 'f':
-                    // TODO
-                    goto cleanup;
+                    fuses = true;
+                    break;
                 case 'z':
-                    // TODO
-                    goto cleanup;
+                    disable = true;
+                    break;
                 case 'd':
                     debug = true;
                     break;
@@ -134,7 +137,22 @@ main(int argc, char **argv)
     if (sp == NULL || err != NULL)
         goto cleanup;
 
-    printf("%x\n", dg_debugwire_get_signature(sp, &err));
+    if (identify) {
+        const dg_debugwire_device_t *dev = dg_debugwire_guess_device(sp, &err);
+        if (dev != NULL && err == NULL)
+            printf("Target device: %s\n", dev->name);
+    }
+    else if (fuses) {
+
+    }
+    else if (disable) {
+        if (dg_debugwire_disable(sp, &err) && err == NULL)
+            printf("Target device reseted. The device can be flashed using SPI now. "
+                "This must be done WITHOUT removing power from the device.\n");
+    }
+    else {
+        // run gdbserver here!
+    }
 
 cleanup2:
     dg_serial_port_free(sp);
