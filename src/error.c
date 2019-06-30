@@ -46,7 +46,7 @@ dg_error_new_printf(dg_error_type_t type, const char *format, ...)
 dg_error_t*
 dg_error_new_errno(dg_error_type_t type, int errno_, const char *prefix)
 {
-    if (errno == 0)
+    if (errno_ == 0)
         return NULL;
 
     return dg_error_new_printf(type, "%s: %s.", prefix, strerror(errno_));

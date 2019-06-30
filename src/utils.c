@@ -7,8 +7,11 @@
  * See the file LICENSE.
  */
 
+#define DG_STRING_CHUNK_SIZE 128
+
 #include <string.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -100,4 +103,97 @@ dg_strdup_printf(const char *format, ...)
     char *tmp = dg_strdup_vprintf(format, ap);
     va_end(ap);
     return tmp;
+}
+
+
+dg_string_t*
+dg_string_new(void)
+{
+    dg_string_t* rv = dg_malloc(sizeof(dg_string_t));
+    rv->str = NULL;
+    rv->len = 0;
+    rv->allocated_len = 0;
+
+    // initialize with empty string
+    rv = dg_string_append(rv, "");
+
+    return rv;
+}
+
+
+char*
+dg_string_free(dg_string_t *str, bool free_str)
+{
+    if (str == NULL)
+        return NULL;
+    char *rv = NULL;
+    if (free_str)
+        free(str->str);
+    else
+        rv = str->str;
+    free(str);
+    return rv;
+}
+
+
+dg_string_t*
+dg_string_append_len(dg_string_t *str, const char *suffix, size_t len)
+{
+    if (str == NULL)
+        return NULL;
+    if (suffix == NULL)
+        return str;
+    size_t old_len = str->len;
+    str->len += len;
+    if (str->len + 1 > str->allocated_len) {
+        str->allocated_len = (((str->len + 1) / DG_STRING_CHUNK_SIZE) + 1) *
+            DG_STRING_CHUNK_SIZE;
+        str->str = dg_realloc(str->str, str->allocated_len);
+    }
+    memcpy(str->str + old_len, suffix, len);
+    str->str[str->len] = '\0';
+    return str;
+}
+
+
+dg_string_t*
+dg_string_append(dg_string_t *str, const char *suffix)
+{
+    if (str == NULL)
+        return NULL;
+    const char *my_suffix = suffix == NULL ? "" : suffix;
+    return dg_string_append_len(str, my_suffix, strlen(my_suffix));
+}
+
+
+dg_string_t*
+dg_string_append_c(dg_string_t *str, char c)
+{
+    if (str == NULL)
+        return NULL;
+    size_t old_len = str->len;
+    str->len += 1;
+    if (str->len + 1 > str->allocated_len) {
+        str->allocated_len = (((str->len + 1) / DG_STRING_CHUNK_SIZE) + 1) *
+            DG_STRING_CHUNK_SIZE;
+        str->str = dg_realloc(str->str, str->allocated_len);
+    }
+    str->str[old_len] = c;
+    str->str[str->len] = '\0';
+    return str;
+}
+
+
+dg_string_t*
+dg_string_append_printf(dg_string_t *str, const char *format, ...)
+{
+    if (str == NULL)
+        return NULL;
+    va_list ap;
+    va_start(ap, format);
+    char *tmp = dg_strdup_vprintf(format, ap);
+    va_end(ap);
+    str = dg_string_append(str, tmp);
+    free(tmp);
+    return str;
 }

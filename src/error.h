@@ -10,6 +10,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
 typedef enum {
     DG_ERROR_UTILS = 1,

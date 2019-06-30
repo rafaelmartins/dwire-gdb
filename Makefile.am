@@ -14,13 +14,21 @@ bin_PROGRAMS = \
 	$(NULL)
 
 noinst_HEADERS = \
+	src/debug.h \
+	src/debugwire.h \
 	src/error.h \
+	src/gdbserver.h \
+	src/serial.h \
 	src/utils.h \
 	$(NULL)
 
 dwire_gdb_SOURCES = \
 	src/main.c \
+	src/debug.c \
+	src/debugwire.c \
 	src/error.c \
+	src/gdbserver.c \
+	src/serial.c \
 	src/utils.c \
 	$(NULL)
 
