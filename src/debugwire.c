@@ -13,6 +13,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "error.h"
 #include "serial.h"
@@ -27,13 +28,13 @@ static const dg_debugwire_device_t devices[] = {
 };
 
 
-const dg_debugwire_device_t*
-dg_debugwire_guess_device(dg_serial_port_t *sp, dg_error_t **err)
+static const dg_debugwire_device_t*
+guess_device(dg_debugwire_t *dw, dg_error_t **err)
 {
-    if (sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || err == NULL || *err != NULL)
         return NULL;
 
-    uint16_t sign = dg_debugwire_get_signature(sp, err);
+    uint16_t sign = dg_debugwire_get_signature(dw, err);
     if (sign == 0 || *err != NULL)
         return NULL;
 
@@ -49,16 +50,49 @@ dg_debugwire_guess_device(dg_serial_port_t *sp, dg_error_t **err)
 }
 
 
-uint16_t
-dg_debugwire_get_signature(dg_serial_port_t *sp, dg_error_t **err)
+dg_debugwire_t*
+dg_debugwire_new(const char *device, uint32_t baudrate, dg_error_t **err)
 {
-    if (sp == NULL || err == NULL || *err != NULL)
+    if (*err != NULL)
+        return NULL;
+
+    dg_serial_port_t *sp = dg_serial_port_new(device, baudrate, err);
+    if (sp == NULL || *err != NULL)
+        return NULL;
+
+    dg_debugwire_t *rv = dg_malloc(sizeof(dg_debugwire_t));
+    rv->sp = sp;
+    rv->dev = guess_device(rv, err);
+    if (rv->dev == NULL || *err != NULL) {
+        dg_debugwire_free(rv);
+        return NULL;
+    }
+
+    return rv;
+}
+
+
+void
+dg_debugwire_free(dg_debugwire_t *dw)
+{
+    if (dw == NULL)
+        return;
+
+    dg_serial_port_free(dw->sp);
+    free(dw);
+}
+
+
+uint16_t
+dg_debugwire_get_signature(dg_debugwire_t *dw, dg_error_t **err)
+{
+    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
         return 0;
 
-    if (!dg_serial_port_write_byte(sp, 0xf3, err))
+    if (!dg_serial_port_write_byte(dw->sp, 0xf3, err))
         return 0;
 
-    uint16_t rv = dg_serial_port_read_word(sp, err);
+    uint16_t rv = dg_serial_port_read_word(dw->sp, err);
     if (*err != NULL)
         return 0;
 
@@ -67,31 +101,31 @@ dg_debugwire_get_signature(dg_serial_port_t *sp, dg_error_t **err)
 
 
 bool
-dg_debugwire_disable(dg_serial_port_t *sp, dg_error_t **err)
+dg_debugwire_disable(dg_debugwire_t *dw, dg_error_t **err)
 {
-    if (sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
         return false;
 
-    return dg_serial_port_write_byte(sp, 0x06, err);
+    return dg_serial_port_write_byte(dw->sp, 0x06, err);
 }
 
 
 bool
-dg_debugwire_reset(dg_serial_port_t *sp, dg_error_t **err)
+dg_debugwire_reset(dg_debugwire_t *dw, dg_error_t **err)
 {
-    if (sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
         return false;
 
-    if (!dg_serial_port_break(sp, err))
+    if (!dg_serial_port_break(dw->sp, err))
         return false;
 
-    if (!dg_serial_port_write_byte(sp, 0x07, err))
+    if (!dg_serial_port_write_byte(dw->sp, 0x07, err))
         return false;
 
     uint8_t b;
 
     do {
-        b = dg_serial_port_read_byte(sp, err);
+        b = dg_serial_port_read_byte(dw->sp, err);
         if (*err != NULL)
             return false;
     }
@@ -108,10 +142,10 @@ dg_debugwire_reset(dg_serial_port_t *sp, dg_error_t **err)
 
 
 bool
-dg_debugwire_write_registers(dg_serial_port_t *sp, uint8_t start,
+dg_debugwire_write_registers(dg_debugwire_t *dw, uint8_t start,
     const uint8_t *values, uint8_t values_len, dg_error_t **err)
 {
-    if (sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
         return false;
 
     const uint8_t b[10] = {
@@ -121,19 +155,19 @@ dg_debugwire_write_registers(dg_serial_port_t *sp, uint8_t start,
         0xd1, 0x00, start + values_len,
         0x20,
     };
-    if (10 != dg_serial_port_write(sp, b, 10, err) || *err != NULL)
+    if (10 != dg_serial_port_write(dw->sp, b, 10, err) || *err != NULL)
         return false;
 
-    return values_len == dg_serial_port_write(sp, values, values_len, err)
+    return values_len == dg_serial_port_write(dw->sp, values, values_len, err)
         && *err == NULL;
 }
 
 
 bool
-dg_debugwire_read_registers(dg_serial_port_t *sp, uint8_t start,
+dg_debugwire_read_registers(dg_debugwire_t *dw, uint8_t start,
     uint8_t *values, uint8_t values_len, dg_error_t **err)
 {
-    if (sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
         return false;
 
     const uint8_t b[10] = {
@@ -143,19 +177,19 @@ dg_debugwire_read_registers(dg_serial_port_t *sp, uint8_t start,
         0xd1, 0x00, start + values_len,
         0x20,
     };
-    if (10 != dg_serial_port_write(sp, b, 10, err) || *err != NULL)
+    if (10 != dg_serial_port_write(dw->sp, b, 10, err) || *err != NULL)
         return false;
 
-    return values_len == dg_serial_port_read(sp, values, values_len, err)
+    return values_len == dg_serial_port_read(dw->sp, values, values_len, err)
         && *err == NULL;
 }
 
 
 bool
-dg_debugwire_write_instruction(dg_serial_port_t *sp, uint16_t inst,
+dg_debugwire_write_instruction(dg_debugwire_t *dw, uint16_t inst,
     dg_error_t **err)
 {
-    if (sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
         return false;
 
     const uint8_t b[5] = {
@@ -165,44 +199,40 @@ dg_debugwire_write_instruction(dg_serial_port_t *sp, uint16_t inst,
         inst,
         0x23,
     };
-    return 5 == dg_serial_port_write(sp, b, 5, err) && *err == NULL;
+    return 5 == dg_serial_port_write(dw->sp, b, 5, err) && *err == NULL;
 }
 
 
 bool
-dg_debugwire_instruction_in(dg_serial_port_t *sp, uint8_t address, uint8_t reg,
+dg_debugwire_instruction_in(dg_debugwire_t *dw, uint8_t address, uint8_t reg,
     dg_error_t **err)
 {
-    if (sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || err == NULL || *err != NULL)
         return false;
 
-    return dg_debugwire_write_instruction(sp,
+    return dg_debugwire_write_instruction(dw,
         0xb000 | ((address & 0x30) << 5) | ((reg & 0x1f) << 4) | (address & 0x0f),
         err) && *err == NULL;
 }
 
 
 bool
-dg_debugwire_instruction_out(dg_serial_port_t *sp, uint8_t address, uint8_t reg,
+dg_debugwire_instruction_out(dg_debugwire_t *dw, uint8_t address, uint8_t reg,
     dg_error_t **err)
 {
-    if (sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || err == NULL || *err != NULL)
         return false;
 
-    return dg_debugwire_write_instruction(sp,
+    return dg_debugwire_write_instruction(dw,
         0xb800 | ((address & 0x30) << 5) | ((reg & 0x1f) << 4) | (address & 0x0f),
         err) && *err == NULL;
 }
 
 
 char*
-dg_debugwire_get_fuses(dg_serial_port_t *sp, dg_error_t **err)
+dg_debugwire_get_fuses(dg_debugwire_t *dw, dg_error_t **err)
 {
-    if (sp == NULL || err == NULL || *err != NULL)
-        return NULL;
-
-    const dg_debugwire_device_t *dev = dg_debugwire_guess_device(sp, err);
-    if (dev == NULL || *err != NULL)
+    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
         return NULL;
 
     uint8_t b[3] = {
@@ -223,23 +253,23 @@ dg_debugwire_get_fuses(dg_serial_port_t *sp, dg_error_t **err)
     for (size_t i = 0; i < 4; i++) {
         b[1] = f[i];
 
-        if (!dg_debugwire_write_registers(sp, 29, b, 3, err) || *err != NULL) {
+        if (!dg_debugwire_write_registers(dw, 29, b, 3, err) || *err != NULL) {
             dg_string_free(rv, true);
             return NULL;
         }
 
-        if (!dg_debugwire_instruction_out(sp, dev->spmcsr, 29, err) || *err != NULL) {
+        if (!dg_debugwire_instruction_out(dw, dw->dev->spmcsr, 29, err) || *err != NULL) {
             dg_string_free(rv, true);
             return NULL;
         }
 
-        if (!dg_debugwire_write_instruction(sp, 0x95c8, err) || *err != NULL) {
+        if (!dg_debugwire_write_instruction(dw, 0x95c8, err) || *err != NULL) {
             dg_string_free(rv, true);
             return NULL;
         }
 
         uint8_t r;
-        if (!dg_debugwire_read_registers(sp, 0, &r, 1, err) || *err != NULL) {
+        if (!dg_debugwire_read_registers(dw, 0, &r, 1, err) || *err != NULL) {
             dg_string_free(rv, true);
             return NULL;
         }

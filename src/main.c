@@ -19,7 +19,6 @@
 #include "debugwire.h"
 #include "error.h"
 #include "gdbserver.h"
-#include "serial.h"
 #include "utils.h"
 
 
@@ -133,23 +132,21 @@ main(int argc, char **argv)
 
     dg_debug_set(debug);
 
-    dg_serial_port_t *sp = dg_serial_port_new(serial_port, baudrate, &err);
-    if (sp == NULL || err != NULL)
+    dg_debugwire_t *dw = dg_debugwire_new(serial_port, baudrate, &err);
+    if (dw == NULL || err != NULL)
         goto cleanup;
 
     if (identify) {
-        const dg_debugwire_device_t *dev = dg_debugwire_guess_device(sp, &err);
-        if (dev != NULL && err == NULL)
-            printf("Target device: %s\n", dev->name);
+        printf("Target device: %s\n", dw->dev->name);
     }
     else if (fuses) {
-        char *f = dg_debugwire_get_fuses(sp, &err);
+        char *f = dg_debugwire_get_fuses(dw, &err);
         if (f != NULL || err == NULL)
             printf("Target device fuses: %s\n", f);
         free(f);
     }
     else if (disable) {
-        if (dg_debugwire_disable(sp, &err) && err == NULL)
+        if (dg_debugwire_disable(dw, &err) && err == NULL)
             printf("Target device reseted. The device can be flashed using SPI now. "
                 "This must be done WITHOUT removing power from the device.\n");
     }
@@ -158,7 +155,7 @@ main(int argc, char **argv)
     }
 
 cleanup2:
-    dg_serial_port_free(sp);
+    dg_debugwire_free(dw);
 
 cleanup:
     if (err != NULL) {

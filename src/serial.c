@@ -109,6 +109,8 @@ serial_break(int fd, dg_error_t **err)
         return false;
     }
 
+    // FIXME: the following break handling is part of debugwire, should be
+    // moved to debugwire.c
     uint8_t b;
 
     do {
