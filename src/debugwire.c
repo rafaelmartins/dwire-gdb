@@ -56,6 +56,9 @@ guess_device(dg_debugwire_t *dw, dg_error_t **err)
 static char*
 guess_port(dg_error_t **err)
 {
+    if (err == NULL || *err != NULL)
+        return NULL;
+
     glob_t globbuf;
     glob("/dev/ttyUSB*", 0, NULL, &globbuf);
 
@@ -89,31 +92,23 @@ guess_port(dg_error_t **err)
 static uint32_t
 guess_baudrate(const char *device, dg_error_t **err)
 {
+    if (err == NULL || *err != NULL)
+        return 0;
+
     // max supported cpu freq is 20mhz. there are faster avrs, but their usually
     // have PDI
-
-    dg_error_t *tmp_err = NULL;
-    dg_error_t *last_err = NULL;
 
     for (size_t i = 20; i > 0; i--) {
         uint32_t baudrate = (i * 1000000) / 128;
 
-        int fd = dg_serial_open(device, baudrate, &tmp_err);
-        if (tmp_err != NULL) {
-            dg_error_free(last_err);
-            last_err = tmp_err;
-            tmp_err = NULL;
-            continue;
-        }
+        int fd = dg_serial_open(device, baudrate, err);
+        if (*err != NULL)
+            return 0;
 
-        uint8_t b = dg_serial_send_break(fd, &tmp_err);
+        uint8_t b = dg_serial_send_break(fd, err);
         close(fd);
-        if (tmp_err != NULL) {
-            dg_error_free(last_err);
-            last_err = tmp_err;
-            tmp_err = NULL;
-            continue;
-        }
+        if (*err != NULL)
+            return 0;
 
         if (b == 0x55) {
             dg_debug_printf(" * Detected baudrate: %d\n", baudrate);
@@ -123,17 +118,8 @@ guess_baudrate(const char *device, dg_error_t **err)
         usleep(10000);
     }
 
-    if (last_err == NULL) {
-        *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE,
-            "Failed to detect baudrate for serial port (%s)", device);
-    }
-    else {
-        *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE,
-            "Failed to detect baudrate for serial port (%s): %s", device,
-            last_err->msg);
-    }
-
-    dg_error_free(last_err);
+    *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE,
+        "Failed to detect baudrate for serial port (%s)", device);
 
     return 0;
 }
