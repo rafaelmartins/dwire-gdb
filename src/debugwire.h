@@ -21,7 +21,9 @@ typedef struct {
 } dg_debugwire_device_t;
 
 typedef struct {
-    dg_serial_port_t *sp;
+    char *device;
+    uint32_t baudrate;
+    int fd;
     const dg_debugwire_device_t *dev;
 } dg_debugwire_t;
 

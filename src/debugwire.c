@@ -11,10 +11,13 @@
 #include <config.h>
 #endif /* HAVE_CONFIG_H */
 
+#include <glob.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <unistd.h>
 
+#include "debug.h"
 #include "error.h"
 #include "serial.h"
 #include "utils.h"
@@ -50,18 +53,139 @@ guess_device(dg_debugwire_t *dw, dg_error_t **err)
 }
 
 
+static char*
+guess_port(dg_error_t **err)
+{
+    glob_t globbuf;
+    glob("/dev/ttyUSB*", 0, NULL, &globbuf);
+
+    if (globbuf.gl_pathc == 1) {
+        dg_debug_printf(" * Detected serial port: %s\n", globbuf.gl_pathv[0]);
+        return dg_strdup(globbuf.gl_pathv[0]);
+    }
+
+    if (globbuf.gl_pathc == 0) {
+        *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE, "No serial port found");
+        return NULL;
+    }
+
+    dg_string_t *msg = dg_string_new();
+    dg_string_append(msg, "More than one serial port found, please select one: ");
+    for (size_t i = 0; i < globbuf.gl_pathc; i++) {
+        dg_string_append(msg, globbuf.gl_pathv[i]);
+        if (i < (globbuf.gl_pathc - 1))
+            dg_string_append(msg, ", ");
+    }
+    dg_string_append_c(msg, '.');
+
+    *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE, msg->str);
+
+    dg_string_free(msg, true);
+
+    return NULL;
+}
+
+
+static uint32_t
+guess_baudrate(const char *device, dg_error_t **err)
+{
+    // max supported cpu freq is 20mhz. there are faster avrs, but their usually
+    // have PDI
+
+    dg_error_t *tmp_err = NULL;
+    dg_error_t *last_err = NULL;
+
+    for (size_t i = 20; i > 0; i--) {
+        uint32_t baudrate = (i * 1000000) / 128;
+
+        int fd = dg_serial_open(device, baudrate, &tmp_err);
+        if (tmp_err != NULL) {
+            dg_error_free(last_err);
+            last_err = tmp_err;
+            tmp_err = NULL;
+            continue;
+        }
+
+        uint8_t b = dg_serial_send_break(fd, &tmp_err);
+        close(fd);
+        if (tmp_err != NULL) {
+            dg_error_free(last_err);
+            last_err = tmp_err;
+            tmp_err = NULL;
+            continue;
+        }
+
+        if (b == 0x55) {
+            dg_debug_printf(" * Detected baudrate: %d\n", baudrate);
+            return baudrate;
+        }
+
+        usleep(10000);
+    }
+
+    if (last_err == NULL) {
+        *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE,
+            "Failed to detect baudrate for serial port (%s)", device);
+    }
+    else {
+        *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE,
+            "Failed to detect baudrate for serial port (%s): %s", device,
+            last_err->msg);
+    }
+
+    dg_error_free(last_err);
+
+    return 0;
+}
+
+
 dg_debugwire_t*
 dg_debugwire_new(const char *device, uint32_t baudrate, dg_error_t **err)
 {
-    if (*err != NULL)
+    if (err == NULL || *err != NULL)
         return NULL;
 
-    dg_serial_port_t *sp = dg_serial_port_new(device, baudrate, err);
-    if (sp == NULL || *err != NULL)
+    char *dev = NULL;
+    if (device == NULL) {
+        dev = guess_port(err);
+        if (dev == NULL || *err != NULL)
+            return NULL;
+    }
+    else {
+        dev = dg_strdup(device);
+    }
+
+    if (baudrate == 0) {
+        baudrate = guess_baudrate(dev, err);
+        if (baudrate == 0 || *err != NULL) {
+            free(dev);
+            return NULL;
+        }
+    }
+
+    int fd = dg_serial_open(dev, baudrate, err);
+    if (fd < 0 || *err != NULL) {
+        free(dev);
         return NULL;
+    }
+
+    uint8_t b = dg_serial_send_break(fd, err);
+    if (*err != NULL) {
+        free(dev);
+        close(fd);
+        return NULL;
+    }
+
+    if (b != 0x55) {
+        *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE,
+            "Bad break response from MCU. Expected 0x55, got 0x%02x", b);
+        return false;
+    }
 
     dg_debugwire_t *rv = dg_malloc(sizeof(dg_debugwire_t));
-    rv->sp = sp;
+    rv->device = dev;
+    rv->baudrate = baudrate;
+    rv->fd = fd;
     rv->dev = guess_device(rv, err);
     if (rv->dev == NULL || *err != NULL) {
         dg_debugwire_free(rv);
@@ -78,7 +202,8 @@ dg_debugwire_free(dg_debugwire_t *dw)
     if (dw == NULL)
         return;
 
-    dg_serial_port_free(dw->sp);
+    free(dw->device);
+    close(dw->fd);
     free(dw);
 }
 
@@ -86,13 +211,13 @@ dg_debugwire_free(dg_debugwire_t *dw)
 uint16_t
 dg_debugwire_get_signature(dg_debugwire_t *dw, dg_error_t **err)
 {
-    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || err == NULL || *err != NULL)
         return 0;
 
-    if (!dg_serial_port_write_byte(dw->sp, 0xf3, err))
+    if (!dg_serial_write_byte(dw->fd, 0xf3, err))
         return 0;
 
-    uint16_t rv = dg_serial_port_read_word(dw->sp, err);
+    uint16_t rv = dg_serial_read_word(dw->fd, err);
     if (*err != NULL)
         return 0;
 
@@ -103,36 +228,29 @@ dg_debugwire_get_signature(dg_debugwire_t *dw, dg_error_t **err)
 bool
 dg_debugwire_disable(dg_debugwire_t *dw, dg_error_t **err)
 {
-    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || err == NULL || *err != NULL)
         return false;
 
-    return dg_serial_port_write_byte(dw->sp, 0x06, err);
+    return dg_serial_write_byte(dw->fd, 0x06, err);
 }
 
 
 bool
 dg_debugwire_reset(dg_debugwire_t *dw, dg_error_t **err)
 {
-    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || err == NULL || *err != NULL)
         return false;
 
-    if (!dg_serial_port_break(dw->sp, err))
+    if (!dg_serial_send_break(dw->fd, err))
         return false;
 
-    if (!dg_serial_port_write_byte(dw->sp, 0x07, err))
+    if (!dg_serial_write_byte(dw->fd, 0x07, err))
         return false;
 
-    uint8_t b;
-
-    do {
-        b = dg_serial_port_read_byte(dw->sp, err);
-        if (*err != NULL)
-            return false;
-    }
-    while (b == 0x00 || b == 0xff);
+    uint8_t b = dg_serial_recv_break(dw->fd, err);
 
     if (b != 0x55) {
-        *err = dg_error_new_printf(DG_ERROR_SERIAL,
+        *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE,
             "Bad break sent from MCU. Expected 0x55, got 0x%02x", b);
         return false;
     }
@@ -145,7 +263,7 @@ bool
 dg_debugwire_write_registers(dg_debugwire_t *dw, uint8_t start,
     const uint8_t *values, uint8_t values_len, dg_error_t **err)
 {
-    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || err == NULL || *err != NULL)
         return false;
 
     const uint8_t b[10] = {
@@ -155,10 +273,10 @@ dg_debugwire_write_registers(dg_debugwire_t *dw, uint8_t start,
         0xd1, 0x00, start + values_len,
         0x20,
     };
-    if (10 != dg_serial_port_write(dw->sp, b, 10, err) || *err != NULL)
+    if (10 != dg_serial_write(dw->fd, b, 10, err) || *err != NULL)
         return false;
 
-    return values_len == dg_serial_port_write(dw->sp, values, values_len, err)
+    return values_len == dg_serial_write(dw->fd, values, values_len, err)
         && *err == NULL;
 }
 
@@ -167,7 +285,7 @@ bool
 dg_debugwire_read_registers(dg_debugwire_t *dw, uint8_t start,
     uint8_t *values, uint8_t values_len, dg_error_t **err)
 {
-    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || err == NULL || *err != NULL)
         return false;
 
     const uint8_t b[10] = {
@@ -177,10 +295,10 @@ dg_debugwire_read_registers(dg_debugwire_t *dw, uint8_t start,
         0xd1, 0x00, start + values_len,
         0x20,
     };
-    if (10 != dg_serial_port_write(dw->sp, b, 10, err) || *err != NULL)
+    if (10 != dg_serial_write(dw->fd, b, 10, err) || *err != NULL)
         return false;
 
-    return values_len == dg_serial_port_read(dw->sp, values, values_len, err)
+    return values_len == dg_serial_read(dw->fd, values, values_len, err)
         && *err == NULL;
 }
 
@@ -189,7 +307,7 @@ bool
 dg_debugwire_write_instruction(dg_debugwire_t *dw, uint16_t inst,
     dg_error_t **err)
 {
-    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || err == NULL || *err != NULL)
         return false;
 
     const uint8_t b[5] = {
@@ -199,7 +317,7 @@ dg_debugwire_write_instruction(dg_debugwire_t *dw, uint16_t inst,
         inst,
         0x23,
     };
-    return 5 == dg_serial_port_write(dw->sp, b, 5, err) && *err == NULL;
+    return 5 == dg_serial_write(dw->fd, b, 5, err) && *err == NULL;
 }
 
 
@@ -232,7 +350,7 @@ dg_debugwire_instruction_out(dg_debugwire_t *dw, uint8_t address, uint8_t reg,
 char*
 dg_debugwire_get_fuses(dg_debugwire_t *dw, dg_error_t **err)
 {
-    if (dw == NULL || dw->sp == NULL || err == NULL || *err != NULL)
+    if (dw == NULL || err == NULL || *err != NULL)
         return NULL;
 
     uint8_t b[3] = {
