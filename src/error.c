@@ -46,10 +46,11 @@ dg_error_new_printf(dg_error_type_t type, const char *format, ...)
 dg_error_t*
 dg_error_new_errno(dg_error_type_t type, int errno_, const char *prefix)
 {
-    if (errno_ == 0)
-        return NULL;
+    char *msg = "(unset)";
+    if (errno_ != 0)
+        msg = strerror(errno_);
 
-    return dg_error_new_printf(type, "%s: %s.", prefix, strerror(errno_));
+    return dg_error_new_printf(type, "%s: %s", prefix, msg);
 }
 
 
