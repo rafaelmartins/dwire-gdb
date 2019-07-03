@@ -77,6 +77,21 @@ __wrap_usleep(useconds_t usec)
 }
 
 
+ssize_t
+__wrap_read(int fd, void *buf, size_t count)
+{
+    assert_int_equal(fd, mock_type(int));
+    assert_int_equal(count, mock_type(size_t));
+    ssize_t l = mock_type(ssize_t);
+    ssize_t i = 0;
+    for (i = 0; i < count && i < l; i++) {
+        ((uint8_t*)buf)[i] = 'a' + i;
+    }
+    errno = 0;
+    return l <= 0 ? l : i;
+}
+
+
 static void
 test_open1(void **state)
 {
@@ -166,6 +181,155 @@ test_open4(void **state)
 }
 
 
+static void
+test_read1(void **state)
+{
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 21);
+    will_return(__wrap_read, -1);
+
+    dg_error_t *err = NULL;
+    uint8_t buf[21];
+    int n = dg_serial_read(44, buf, 21, &err);
+    assert_int_equal(n, -1);
+    assert_non_null(err);
+    assert_string_equal(err->msg, "Failed to read from serial port: (unset)");
+    dg_error_free(err);
+}
+
+
+static void
+test_read2(void **state)
+{
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 21);
+    will_return(__wrap_read, 0);
+
+    dg_error_t *err = NULL;
+    uint8_t buf[21];
+    int n = dg_serial_read(44, buf, 21, &err);
+    assert_int_equal(n, -1);
+    assert_non_null(err);
+    assert_string_equal(err->msg, "Got unexpected EOF from serial port");
+    dg_error_free(err);
+}
+
+
+static void
+test_read3(void **state)
+{
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 21);
+    will_return(__wrap_read, 10);
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 11);
+    will_return(__wrap_read, 10);
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 1);
+    will_return(__wrap_read, 10);
+
+    dg_error_t *err = NULL;
+    uint8_t buf[22];
+    int n = dg_serial_read(44, buf, 21, &err);
+    assert_int_equal(n, 21);
+    assert_null(err);
+    buf[21] = 0;
+    assert_string_equal(buf, "abcdefghijabcdefghija");
+}
+
+
+static void
+test_read_byte1(void **state)
+{
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 1);
+    will_return(__wrap_read, -1);
+
+    dg_error_t *err = NULL;
+    uint8_t c = dg_serial_read_byte(44, &err);
+    assert_int_equal(c, 0);
+    assert_non_null(err);
+    assert_string_equal(err->msg, "Failed to read from serial port: (unset)");
+    dg_error_free(err);
+}
+
+
+static void
+test_read_byte2(void **state)
+{
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 1);
+    will_return(__wrap_read, 0);
+
+    dg_error_t *err = NULL;
+    uint8_t c = dg_serial_read_byte(44, &err);
+    assert_int_equal(c, 0);
+    assert_non_null(err);
+    assert_string_equal(err->msg, "Got unexpected EOF from serial port");
+    dg_error_free(err);
+}
+
+
+static void
+test_read_byte3(void **state)
+{
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 1);
+    will_return(__wrap_read, 1);
+
+    dg_error_t *err = NULL;
+    uint8_t c = dg_serial_read_byte(44, &err);
+    assert_int_equal(c, 'a');
+    assert_null(err);
+}
+
+
+static void
+test_read_word1(void **state)
+{
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 2);
+    will_return(__wrap_read, -1);
+
+    dg_error_t *err = NULL;
+    uint16_t c = dg_serial_read_word(44, &err);
+    assert_int_equal(c, 0);
+    assert_non_null(err);
+    assert_string_equal(err->msg, "Failed to read from serial port: (unset)");
+    dg_error_free(err);
+}
+
+
+static void
+test_read_word2(void **state)
+{
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 2);
+    will_return(__wrap_read, 0);
+
+    dg_error_t *err = NULL;
+    uint16_t c = dg_serial_read_word(44, &err);
+    assert_int_equal(c, 0);
+    assert_non_null(err);
+    assert_string_equal(err->msg, "Got unexpected EOF from serial port");
+    dg_error_free(err);
+}
+
+
+static void
+test_read_word3(void **state)
+{
+    will_return(__wrap_read, 44);
+    will_return(__wrap_read, 2);
+    will_return(__wrap_read, 2);
+
+    dg_error_t *err = NULL;
+    uint16_t c = dg_serial_read_word(44, &err);
+    assert_int_equal(c, ('a' << 8) | 'b');
+    assert_null(err);
+}
+
+
 int
 main(void)
 {
@@ -174,6 +338,15 @@ main(void)
         unit_test(test_open2),
         unit_test(test_open3),
         unit_test(test_open4),
+        unit_test(test_read1),
+        unit_test(test_read2),
+        unit_test(test_read3),
+        unit_test(test_read_byte1),
+        unit_test(test_read_byte2),
+        unit_test(test_read_byte3),
+        unit_test(test_read_word1),
+        unit_test(test_read_word2),
+        unit_test(test_read_word3),
     };
     return run_tests(tests);
 }
