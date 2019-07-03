@@ -64,9 +64,11 @@ dg_serial_open(const char *device, uint32_t baudrate, dg_error_t **err)
 
     rv = dg_serial_flush(fd, err);
     if (rv != 0) {
-        *err = dg_error_new_printf(DG_ERROR_SERIAL,
-            "Failed to flush serial port for startup (%s [%d])", device,
-            baudrate);
+        dg_error_t *tmp_err = dg_error_new_printf(DG_ERROR_SERIAL,
+            "Failed to flush serial port for startup (%s [%d]): %s", device,
+            baudrate, (*err)->msg);
+        dg_error_free(*err);
+        *err = tmp_err;
         close(fd);
         return rv;
     }

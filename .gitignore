@@ -33,9 +33,11 @@ Makefile.in
 .dirstamp
 /build-aux/*
 !/build-aux/git-version-gen
+!/build-aux/valgrind.sh
 
 # installed .m4 files
 /m4/*.m4
+!/m4/pkg.m4
 
 # binaries
 /dwire-gdb
@@ -46,5 +48,10 @@ dwire-gdb-*.zip
 
 # git-version-gen
 /.version
+
+# tests
+/tests/check_error
+/tests/check_serial
+/tests/check_utils
 
 /build/
