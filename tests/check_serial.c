@@ -39,6 +39,7 @@ int
 __wrap_close(int fd)
 {
     assert_int_equal(fd, mock_type(int));
+    errno = 0;
     return 0;
 }
 
@@ -73,6 +74,7 @@ int
 __wrap_usleep(useconds_t usec)
 {
     assert_int_equal(usec, mock_type(useconds_t));
+    errno = 0;
     return 0;
 }
 
@@ -102,6 +104,7 @@ test_open1(void **state)
     int fd = dg_serial_open("asd", 123456, &err);
     assert_int_equal(fd, -1);
     assert_non_null(err);
+    assert_int_equal(err->type, DG_ERROR_SERIAL);
     assert_string_equal(err->msg, "Failed to open serial port (asd [123456]): (unset)");
     dg_error_free(err);
 }
@@ -122,6 +125,7 @@ test_open2(void **state)
     int fd = dg_serial_open("asd", 123456, &err);
     assert_int_equal(fd, -1);
     assert_non_null(err);
+    assert_int_equal(err->type, DG_ERROR_SERIAL);
     assert_string_equal(err->msg, "Failed to set termios2 properties (asd [123456]): (unset)");
     dg_error_free(err);
 }
@@ -150,6 +154,7 @@ test_open3(void **state)
     int fd = dg_serial_open("asd", 123456, &err);
     assert_int_equal(fd, -1);
     assert_non_null(err);
+    assert_int_equal(err->type, DG_ERROR_SERIAL);
     assert_string_equal(err->msg, "Failed to flush serial port for startup (asd "
         "[123456]): Failed to flush serial port: (unset)");
     dg_error_free(err);
@@ -193,6 +198,7 @@ test_read1(void **state)
     int n = dg_serial_read(44, buf, 21, &err);
     assert_int_equal(n, -1);
     assert_non_null(err);
+    assert_int_equal(err->type, DG_ERROR_SERIAL);
     assert_string_equal(err->msg, "Failed to read from serial port: (unset)");
     dg_error_free(err);
 }
@@ -210,6 +216,7 @@ test_read2(void **state)
     int n = dg_serial_read(44, buf, 21, &err);
     assert_int_equal(n, -1);
     assert_non_null(err);
+    assert_int_equal(err->type, DG_ERROR_SERIAL);
     assert_string_equal(err->msg, "Got unexpected EOF from serial port");
     dg_error_free(err);
 }
@@ -249,6 +256,7 @@ test_read_byte1(void **state)
     uint8_t c = dg_serial_read_byte(44, &err);
     assert_int_equal(c, 0);
     assert_non_null(err);
+    assert_int_equal(err->type, DG_ERROR_SERIAL);
     assert_string_equal(err->msg, "Failed to read from serial port: (unset)");
     dg_error_free(err);
 }
@@ -265,6 +273,7 @@ test_read_byte2(void **state)
     uint8_t c = dg_serial_read_byte(44, &err);
     assert_int_equal(c, 0);
     assert_non_null(err);
+    assert_int_equal(err->type, DG_ERROR_SERIAL);
     assert_string_equal(err->msg, "Got unexpected EOF from serial port");
     dg_error_free(err);
 }
@@ -295,6 +304,7 @@ test_read_word1(void **state)
     uint16_t c = dg_serial_read_word(44, &err);
     assert_int_equal(c, 0);
     assert_non_null(err);
+    assert_int_equal(err->type, DG_ERROR_SERIAL);
     assert_string_equal(err->msg, "Failed to read from serial port: (unset)");
     dg_error_free(err);
 }
@@ -311,6 +321,7 @@ test_read_word2(void **state)
     uint16_t c = dg_serial_read_word(44, &err);
     assert_int_equal(c, 0);
     assert_non_null(err);
+    assert_int_equal(err->type, DG_ERROR_SERIAL);
     assert_string_equal(err->msg, "Got unexpected EOF from serial port");
     dg_error_free(err);
 }
