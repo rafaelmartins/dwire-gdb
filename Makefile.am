@@ -121,6 +121,7 @@ tests_check_serial_LDFLAGS = \
 	-Wl,--wrap=ioctl \
 	-Wl,--wrap=usleep \
 	-Wl,--wrap=read \
+	-Wl,--wrap=write \
 	$(NULL)
 
 tests_check_serial_LDADD = \
