@@ -64,11 +64,14 @@ guess_port(dg_error_t **err)
 
     if (globbuf.gl_pathc == 1) {
         dg_debug_printf(" * Detected serial port: %s\n", globbuf.gl_pathv[0]);
-        return dg_strdup(globbuf.gl_pathv[0]);
+        char *rv = dg_strdup(globbuf.gl_pathv[0]);
+        globfree(&globbuf);
+        return rv;
     }
 
     if (globbuf.gl_pathc == 0) {
         *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE, "No serial port found");
+        globfree(&globbuf);
         return NULL;
     }
 
@@ -84,6 +87,7 @@ guess_port(dg_error_t **err)
     *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE, msg->str);
 
     dg_string_free(msg, true);
+    globfree(&globbuf);
 
     return NULL;
 }
