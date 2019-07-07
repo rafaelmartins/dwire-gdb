@@ -9,6 +9,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdio.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
@@ -16,6 +17,7 @@
 #include <netdb.h>
 #include <unistd.h>
 
+#include "debug.h"
 #include "error.h"
 #include "utils.h"
 #include "gdbserver.h"
@@ -50,6 +52,157 @@ get_port(int af, const struct sockaddr *addr)
         port = a->sin_port;
     }
     return ntohs(port);
+}
+
+
+static void
+write_response(int fd, const char *resp)
+{
+    uint8_t c = 0;
+    for (size_t i = 0; resp[i] != 0; i++)
+        c += resp[i];
+
+    dg_debug_printf("$> command: %s\n", resp);
+
+    char *r = dg_strdup_printf("+$%s#%02x", resp, c);
+    size_t len = strlen(r);
+
+    int n = 0;
+    while (n < len)
+        n += write(fd, r + n, len - n);
+
+    free(r);
+}
+
+
+static int
+handle_command(int fd, const char *cmd, dg_error_t **err)
+{
+    size_t len = strlen(cmd);
+    if (len == 0) {
+        *err = dg_error_new(DG_ERROR_GDBSERVER, "Empty command");
+        return 1;
+    }
+
+    switch (cmd[0]) {
+        case 'q':
+            if (0 == strcmp(cmd, "qAttached")) {
+                write_response(fd, "1");
+                return 0;
+            }
+            break;
+
+        case '?':
+            write_response(fd, "S00");
+            return 0;
+    }
+
+    write_response(fd, "");
+    return 0;
+}
+
+
+typedef enum {
+    COMMAND_ACK = 1,
+    COMMAND_START,
+    COMMAND,
+    COMMAND_CHECKSUM1,
+    COMMAND_CHECKSUM2,
+} command_state_t;
+
+
+static int
+handle_client(int fd, dg_error_t **err)
+{
+    command_state_t s = COMMAND_ACK;
+    dg_string_t *cmd = NULL;
+    char b;
+    uint8_t c, cd;
+    char d[3];
+    d[2] = 0;
+
+    while (true) {
+        if (1 != read(fd, &b, 1)) {
+            *err = dg_error_new_errno(DG_ERROR_GDBSERVER, errno,
+                "Failed to read from client socket");
+            return 1;
+        }
+
+        switch (s) {
+            case COMMAND_ACK:
+                if (b == '+') {
+                    dg_debug_printf("$< ack\n");
+                    break;
+                }
+                if (b == '-') {
+                    dg_debug_printf("$< nack\n");
+                    *err = dg_error_new(DG_ERROR_GDBSERVER,
+                        "GDB requested retransmission");  // FIXME: retransmit
+                    return 1;
+                }
+                if (b == '$') {
+                    s = COMMAND_START;
+                    break;
+                }
+                *err = dg_error_new_printf(DG_ERROR_GDBSERVER,
+                    "ACK failed, expected '+', got '%c'", b);
+                return 1;
+
+            case COMMAND_START:
+                dg_string_free(cmd, true);
+                cmd = dg_string_new();
+                dg_string_append_c(cmd, b);
+                c = b;
+                s = COMMAND;
+                break;
+
+            case COMMAND:
+                if (b == '#') {
+                    s = COMMAND_CHECKSUM1;
+                    break;
+                }
+                dg_string_append_c(cmd, b);
+                c += b;
+                break;
+
+            case COMMAND_CHECKSUM1:
+                s = COMMAND_CHECKSUM2;
+                d[0] = b;
+                break;
+
+            case COMMAND_CHECKSUM2:
+                s = COMMAND_ACK;
+                d[1] = b;
+                cd = strtoul(d, NULL, 16);
+                if (c != cd) {
+                    *err = dg_error_new_printf(DG_ERROR_GDBSERVER,
+                        "Bad checksum, expected '%x', got '%x'", cd, c);
+                    return 1;
+                }
+                dg_debug_printf("$< command: %s\n", cmd->str);
+
+                {
+                    dg_debug_printf("$> ack\n");
+                    c = '+';
+                    if (1 != write(fd, &c, 1)) {
+                        *err = dg_error_new(DG_ERROR_GDBSERVER,
+                            "Failed to send ack to GDB");
+                        return 1;
+                    }
+
+                    int rv = handle_command(fd, cmd->str, err);
+                    if (rv != 0 || *err != NULL)
+                        return rv;
+                }
+                dg_string_free(cmd, true);
+                cmd = NULL;
+                break;
+        }
+    }
+
+    dg_string_free(cmd, true);
+
+    return 0;
 }
 
 
@@ -166,10 +319,9 @@ dg_gdbserver_run(const char *host, const char *port, dg_error_t **err)
     fprintf(stderr, " * Connection accepted from %s\n", ip);
     free(ip);
 
-    rv = dg_gdbserver_handle_client(client_socket);
-
-    fprintf(stderr, " * Connection closed\n");
+    rv = handle_client(client_socket, err);
     close(client_socket);
+    fprintf(stderr, " * Connection closed\n");
 
 cleanup:
     close(server_socket);
@@ -179,11 +331,4 @@ cleanup0:
     freeaddrinfo(result);
 
     return rv;
-}
-
-
-int
-dg_gdbserver_handle_client(int fd)
-{
-    return 0;
 }

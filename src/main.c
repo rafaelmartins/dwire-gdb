@@ -141,7 +141,7 @@ main(int argc, char **argv)
     }
     else if (fuses) {
         char *f = dg_debugwire_get_fuses(dw, &err);
-        if (f != NULL || err == NULL)
+        if (f != NULL && err == NULL)
             printf("Target device fuses: %s\n", f);
         free(f);
     }
@@ -151,7 +151,8 @@ main(int argc, char **argv)
                 "This must be done WITHOUT removing power from the device.\n");
     }
     else {
-        // run gdbserver here!
+        rv = dg_gdbserver_run(host != NULL ? host : default_host,
+            port != NULL ? port : default_port, &err);
     }
 
 cleanup2:

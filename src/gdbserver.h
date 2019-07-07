@@ -12,4 +12,3 @@
 #include "error.h"
 
 int dg_gdbserver_run(const char *host, const char *port, dg_error_t **err);
-int dg_gdbserver_handle_client(int fd);
