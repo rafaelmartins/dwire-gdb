@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include "debugwire.h"
 #include "error.h"
 
-int dg_gdbserver_run(const char *host, const char *port, dg_error_t **err);
+int dg_gdbserver_run(dg_debugwire_t *dw, const char *host, const char *port,
+    dg_error_t **err);

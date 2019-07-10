@@ -151,7 +151,7 @@ main(int argc, char **argv)
                 "This must be done WITHOUT removing power from the device.\n");
     }
     else {
-        rv = dg_gdbserver_run(host != NULL ? host : default_host,
+        rv = dg_gdbserver_run(dw, host != NULL ? host : default_host,
             port != NULL ? port : default_port, &err);
     }
 

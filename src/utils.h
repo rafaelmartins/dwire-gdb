@@ -26,6 +26,8 @@ char* dg_strdup(const char *s);
 char* dg_strndup(const char *s, size_t n);
 char* dg_strdup_vprintf(const char *format, va_list ap);
 char* dg_strdup_printf(const char *format, ...);
+char** dg_str_split(const char *str, char c, size_t max_pieces);
+void dg_strv_free(char **strv);
 
 
 // string

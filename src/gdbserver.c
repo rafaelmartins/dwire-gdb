@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "debug.h"
+#include "debugwire.h"
 #include "error.h"
 #include "utils.h"
 #include "gdbserver.h"
@@ -64,7 +65,7 @@ write_response(int fd, const char *resp)
 
     dg_debug_printf("$> command: %s\n", resp);
 
-    char *r = dg_strdup_printf("+$%s#%02x", resp, c);
+    char *r = dg_strdup_printf("$%s#%02x", resp, c);
     size_t len = strlen(r);
 
     int n = 0;
@@ -76,7 +77,7 @@ write_response(int fd, const char *resp)
 
 
 static int
-handle_command(int fd, const char *cmd, dg_error_t **err)
+handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
 {
     size_t len = strlen(cmd);
     if (len == 0) {
@@ -88,6 +89,44 @@ handle_command(int fd, const char *cmd, dg_error_t **err)
         case 'q':
             if (0 == strcmp(cmd, "qAttached")) {
                 write_response(fd, "1");
+                return 0;
+            }
+            break;
+
+        case 'g':
+            {
+                uint8_t buf[39] = {0};
+
+                uint16_t pc = dg_debugwire_get_pc(dw, err);
+                if (*err != NULL)
+                    return 1;
+
+                buf[35] = pc % 256;
+                buf[36] = pc / 256;
+
+                if (!dg_debugwire_read_registers(dw, 0, buf, 32, err) || *err != NULL)
+                    return 1;
+
+                // sreg
+                if (!dg_debugwire_read_sram(dw, 0x5f, buf + 32, 1, err) || *err != NULL)
+                    return 1;
+
+                // spl sph
+                if (!dg_debugwire_read_sram(dw, 0x5d, buf + 33, 2, err) || *err != NULL)
+                    return 1;
+
+                if (!dg_debugwire_write_registers(dw, 28, buf + 28, 4, err) || *err != NULL)
+                    return 1;
+
+                if (!dg_debugwire_set_pc(dw, pc, err) || *err != NULL)
+                    return 1;
+
+                dg_string_t *s = dg_string_new();
+                for (size_t i = 0; i < 39; i++)
+                    dg_string_append_printf(s, "%02x", buf[i]);
+                write_response(fd, s->str);
+                dg_string_free(s, true);
+
                 return 0;
             }
             break;
@@ -112,7 +151,7 @@ typedef enum {
 
 
 static int
-handle_client(int fd, dg_error_t **err)
+handle_client(dg_debugwire_t *dw, int fd, dg_error_t **err)
 {
     command_state_t s = COMMAND_ACK;
     dg_string_t *cmd = NULL;
@@ -190,7 +229,7 @@ handle_client(int fd, dg_error_t **err)
                         return 1;
                     }
 
-                    int rv = handle_command(fd, cmd->str, err);
+                    int rv = handle_command(dw, fd, cmd->str, err);
                     if (rv != 0 || *err != NULL)
                         return rv;
                 }
@@ -207,7 +246,8 @@ handle_client(int fd, dg_error_t **err)
 
 
 int
-dg_gdbserver_run(const char *host, const char *port, dg_error_t **err)
+dg_gdbserver_run(dg_debugwire_t *dw, const char *host, const char *port,
+    dg_error_t **err)
 {
     int rv = 0;
     struct addrinfo *result;
@@ -319,7 +359,9 @@ dg_gdbserver_run(const char *host, const char *port, dg_error_t **err)
     fprintf(stderr, " * Connection accepted from %s\n", ip);
     free(ip);
 
-    rv = handle_client(client_socket, err);
+    if (dg_debugwire_reset(dw, err) && *err == NULL)
+        rv = handle_client(dw, client_socket, err);
+
     close(client_socket);
     fprintf(stderr, " * Connection closed\n");
 

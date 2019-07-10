@@ -30,6 +30,9 @@ static const dg_debugwire_device_t devices[] = {
     {NULL, 0, 0},
 };
 
+static uint8_t tmp_reg[4] = {0};
+static uint16_t tmp_pc = 0;
+
 
 static const dg_debugwire_device_t*
 guess_device(dg_debugwire_t *dw, dg_error_t **err)
@@ -216,6 +219,40 @@ dg_debugwire_get_signature(dg_debugwire_t *dw, dg_error_t **err)
 
 
 bool
+dg_debugwire_set_pc(dg_debugwire_t *dw, uint16_t pc, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return false;
+
+    const uint8_t b[3] = {
+        0xd0,
+        pc >> 8, pc,
+    };
+    return 3 == dg_serial_write(dw->fd, b, 3, err) && *err == NULL;
+}
+
+
+uint16_t
+dg_debugwire_get_pc(dg_debugwire_t *dw, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return 0;
+
+    if (!dg_serial_write_byte(dw->fd, 0xf0, err))
+        return 0;
+
+    uint16_t rv = dg_serial_read_word(dw->fd, err);
+    if (*err != NULL)
+        return 0;
+
+    if (rv > 0)
+        rv -= 1;  // is this *always* called after break?
+
+    return rv;
+}
+
+
+bool
 dg_debugwire_disable(dg_debugwire_t *dw, dg_error_t **err)
 {
     if (dw == NULL || err == NULL || *err != NULL)
@@ -266,8 +303,7 @@ dg_debugwire_write_registers(dg_debugwire_t *dw, uint8_t start,
     if (10 != dg_serial_write(dw->fd, b, 10, err) || *err != NULL)
         return false;
 
-    return values_len == dg_serial_write(dw->fd, values, values_len, err)
-        && *err == NULL;
+    return values_len == dg_serial_write(dw->fd, values, values_len, err) && *err == NULL;
 }
 
 
@@ -288,6 +324,86 @@ dg_debugwire_read_registers(dg_debugwire_t *dw, uint8_t start,
     if (10 != dg_serial_write(dw->fd, b, 10, err) || *err != NULL)
         return false;
 
+    return values_len == dg_serial_read(dw->fd, values, values_len, err) && *err == NULL;
+}
+
+
+bool
+dg_debugwire_cache_pc(dg_debugwire_t *dw, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return false;
+
+    tmp_pc = dg_debugwire_get_pc(dw, err);
+    if (*err != NULL)
+        return false;
+
+    dg_debug_printf("PC = 0x%02x\n", tmp_pc);
+
+    return true;
+}
+
+
+bool
+dg_debugwire_restore_pc(dg_debugwire_t *dw, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return false;
+
+    return dg_debugwire_set_pc(dw, tmp_pc, err) && *err == NULL;
+}
+
+
+bool
+dg_debugwire_cache_yz(dg_debugwire_t *dw, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return false;
+
+    if (!dg_debugwire_read_registers(dw, 28, tmp_reg, 4, err) || *err != NULL)
+        return false;
+
+    for (size_t i = 0; i < 4; i++)
+        dg_debug_printf("R%d = 0x%02x\n", i + 28, tmp_reg[i]);
+
+    return true;
+}
+
+
+bool
+dg_debugwire_restore_yz(dg_debugwire_t *dw, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return false;
+
+    return dg_debugwire_write_registers(dw, 28, tmp_reg, 4, err) && *err == NULL;
+}
+
+
+bool
+dg_debugwire_read_sram(dg_debugwire_t *dw, uint16_t start, uint8_t *values,
+    uint16_t values_len, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return false;
+
+    uint8_t b[2] = {
+        start, start >> 8,
+    };
+
+    if (!dg_debugwire_write_registers(dw, 30, b, 2, err) || *err != NULL)
+        return false;
+
+    uint8_t c[10] = {
+        0x66,
+        0xc2, 0x00,
+        0xd0, 0x00, 0x00,
+        0xd1, (values_len * 2) >> 8, values_len * 2,
+        0x20,
+    };
+    if (10 != dg_serial_write(dw->fd, c, 10, err) || *err != NULL)
+        return false;
+
     return values_len == dg_serial_read(dw->fd, values, values_len, err)
         && *err == NULL;
 }
@@ -302,9 +418,7 @@ dg_debugwire_write_instruction(dg_debugwire_t *dw, uint16_t inst,
 
     const uint8_t b[5] = {
         0x64,
-        0xd2,
-        inst >> 8,
-        inst,
+        0xd2, inst >> 8, inst,
         0x23,
     };
     return 5 == dg_serial_write(dw->fd, b, 5, err) && *err == NULL;

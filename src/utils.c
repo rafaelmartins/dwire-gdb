@@ -106,6 +106,41 @@ dg_strdup_printf(const char *format, ...)
 }
 
 
+char**
+dg_str_split(const char *str, char c, size_t max_pieces)
+{
+    if (str == NULL)
+        return NULL;
+    char **rv = dg_malloc(sizeof(char*));
+    size_t i, start = 0, count = 0;
+    for (i = 0; i < strlen(str) + 1; i++) {
+        if (str[0] == '\0')
+            break;
+        if ((str[i] == c && (!max_pieces || count + 1 < max_pieces)) || str[i] == '\0') {
+            rv = dg_realloc(rv, (count + 1) * sizeof(char*));
+            rv[count] = dg_malloc(i - start + 1);
+            memcpy(rv[count], str + start, i - start);
+            rv[count++][i - start] = '\0';
+            start = i + 1;
+        }
+    }
+    rv = dg_realloc(rv, (count + 1) * sizeof(char*));
+    rv[count] = NULL;
+    return rv;
+}
+
+
+void
+dg_strv_free(char **strv)
+{
+    if (strv == NULL)
+        return;
+    for (size_t i = 0; strv[i] != NULL; i++)
+        free(strv[i]);
+    free(strv);
+}
+
+
 dg_string_t*
 dg_string_new(void)
 {
