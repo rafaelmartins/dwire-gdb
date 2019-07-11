@@ -150,8 +150,20 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
                     return 1;
                 }
 
+                if (!dg_debugwire_cache_pc(dw, err) || *err != NULL)
+                    return 1;
+
+                if (!dg_debugwire_cache_yz(dw, err) || *err != NULL)
+                    return 1;
+
                 uint8_t buf[count];
                 if (!dg_debugwire_read_sram(dw, (uint8_t) addr, buf, count, err) || *err != NULL)
+                    return 1;
+
+                if (!dg_debugwire_restore_yz(dw, err) || *err != NULL)
+                    return 1;
+
+                if (!dg_debugwire_restore_pc(dw, err) || *err != NULL)
                     return 1;
 
                 dg_string_t *s = dg_string_new();
