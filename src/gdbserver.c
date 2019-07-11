@@ -144,12 +144,6 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
                 uint32_t addr = strtoul(pieces[0], NULL, 16);
                 uint16_t count = strtoul(pieces[1], NULL, 16);
 
-                if (addr < 0x800000) {
-                    *err = dg_error_new(DG_ERROR_GDBSERVER,
-                        "Reading flash memory not supported");
-                    return 1;
-                }
-
                 if (!dg_debugwire_cache_pc(dw, err) || *err != NULL)
                     return 1;
 
@@ -157,8 +151,14 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
                     return 1;
 
                 uint8_t buf[count];
-                if (!dg_debugwire_read_sram(dw, (uint8_t) addr, buf, count, err) || *err != NULL)
-                    return 1;
+                if (addr < 0x800000) {
+                    if (!dg_debugwire_read_flash(dw, (uint8_t) addr, buf, count, err) || *err != NULL)
+                        return 1;
+                }
+                else {
+                    if (!dg_debugwire_read_sram(dw, (uint8_t) addr, buf, count, err) || *err != NULL)
+                        return 1;
+                }
 
                 if (!dg_debugwire_restore_yz(dw, err) || *err != NULL)
                     return 1;
@@ -175,6 +175,12 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
                 return 0;
             }
             break;
+
+        case 's':
+            if (!dg_debugwire_step(dw, err) || *err != NULL)
+                return 1;
+            write_response(fd, "S00");
+            return 0;
 
         case '?':
             write_response(fd, "S00");

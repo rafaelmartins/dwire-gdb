@@ -410,6 +410,35 @@ dg_debugwire_read_sram(dg_debugwire_t *dw, uint16_t start, uint8_t *values,
 
 
 bool
+dg_debugwire_read_flash(dg_debugwire_t *dw, uint16_t start, uint8_t *values,
+    uint16_t values_len, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return false;
+
+    uint8_t b[2] = {
+        start, start >> 8,
+    };
+
+    if (!dg_debugwire_write_registers(dw, 30, b, 2, err) || *err != NULL)
+        return false;
+
+    uint8_t c[10] = {
+        0x66,
+        0xc2, 0x02,
+        0xd0, 0x00, 0x00,
+        0xd1, (values_len * 2) >> 8, values_len * 2,
+        0x20,
+    };
+    if (10 != dg_serial_write(dw->fd, c, 10, err) || *err != NULL)
+        return false;
+
+    return values_len == dg_serial_read(dw->fd, values, values_len, err)
+        && *err == NULL;
+}
+
+
+bool
 dg_debugwire_write_instruction(dg_debugwire_t *dw, uint16_t inst,
     dg_error_t **err)
 {
@@ -518,4 +547,30 @@ dg_debugwire_get_fuses(dg_debugwire_t *dw, dg_error_t **err)
     }
 
     return dg_string_free(rv, false);
+}
+
+
+bool
+dg_debugwire_step(dg_debugwire_t *dw, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return false;
+
+    const uint8_t b[2] = {
+        0x60,
+        0x31,
+    };
+    if (2 != dg_serial_write(dw->fd, b, 2, err) || *err != NULL)
+        return false;
+
+    uint8_t d = dg_serial_recv_break(dw->fd, err);
+    if (d != 0x55) {
+        if (*err != NULL)
+            return false;
+        *err = dg_error_new_printf(DG_ERROR_DEBUGWIRE,
+            "Bad break sent from MCU. Expected 0x55, got 0x%02x", d);
+        return false;
+    }
+
+    return true;
 }
