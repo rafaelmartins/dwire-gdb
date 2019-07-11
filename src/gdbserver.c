@@ -131,6 +131,39 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
             }
             break;
 
+        case 'm':
+            {
+                char **pieces = dg_str_split(cmd + 1, ',', 2);
+                if (2 != dg_strv_length(pieces)) {
+                    *err = dg_error_new_printf(DG_ERROR_GDBSERVER,
+                        "Malformed memory request: %s", cmd);
+                    dg_strv_free(pieces);
+                    return 1;
+                }
+
+                uint32_t addr = strtoul(pieces[0], NULL, 16);
+                uint16_t count = strtoul(pieces[1], NULL, 16);
+
+                if (addr < 0x800000) {
+                    *err = dg_error_new(DG_ERROR_GDBSERVER,
+                        "Reading flash memory not supported");
+                    return 1;
+                }
+
+                uint8_t buf[count];
+                if (!dg_debugwire_read_sram(dw, (uint8_t) addr, buf, count, err) || *err != NULL)
+                    return 1;
+
+                dg_string_t *s = dg_string_new();
+                for (size_t i = 0; i < count; i++)
+                    dg_string_append_printf(s, "%02x", buf[i]);
+                write_response(fd, s->str);
+                dg_string_free(s, true);
+
+                return 0;
+            }
+            break;
+
         case '?':
             write_response(fd, "S00");
             return 0;

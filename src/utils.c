@@ -141,6 +141,17 @@ dg_strv_free(char **strv)
 }
 
 
+size_t
+dg_strv_length(char **strv)
+{
+    if (strv == NULL)
+        return 0;
+    size_t i;
+    for (i = 0; strv[i] != NULL; i++);
+    return i;
+}
+
+
 dg_string_t*
 dg_string_new(void)
 {
