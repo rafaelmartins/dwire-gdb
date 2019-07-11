@@ -101,8 +101,8 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
                 if (*err != NULL)
                     return 1;
 
-                buf[35] = pc % 256;
-                buf[36] = pc / 256;
+                buf[35] = pc;
+                buf[36] = pc >> 8;
 
                 if (!dg_debugwire_read_registers(dw, 0, buf, 32, err) || *err != NULL)
                     return 1;

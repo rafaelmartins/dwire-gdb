@@ -17,7 +17,6 @@
 typedef struct {
     const char *name;
     uint16_t signature;
-    uint8_t spmcsr;
 } dg_debugwire_device_t;
 
 typedef struct {

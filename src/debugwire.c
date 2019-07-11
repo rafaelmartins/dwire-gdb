@@ -25,9 +25,9 @@
 
 // FIXME: I'm only listing here the devices I own.
 static const dg_debugwire_device_t devices[] = {
-    {"ATtiny84", 0x930c, 0x37},
-    {"ATtiny85", 0x930b, 0x37},
-    {NULL, 0, 0},
+    {"ATtiny84", 0x930c},
+    {"ATtiny85", 0x930b},
+    {NULL, 0},
 };
 
 static uint8_t tmp_reg[4] = {0};
@@ -480,7 +480,7 @@ dg_debugwire_get_fuses(dg_debugwire_t *dw, dg_error_t **err)
             return NULL;
         }
 
-        if (!dg_debugwire_instruction_out(dw, dw->dev->spmcsr, 29, err) || *err != NULL) {
+        if (!dg_debugwire_instruction_out(dw, 0x37, 29, err) || *err != NULL) {
             dg_string_free(rv, true);
             return NULL;
         }
