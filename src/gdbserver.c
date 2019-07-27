@@ -15,6 +15,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "debug.h"
@@ -76,6 +79,40 @@ write_response(int fd, const char *resp)
 }
 
 
+static bool
+wait(dg_debugwire_t *dw, int fd, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return false;
+
+    fd_set fds;
+    FD_ZERO(&fds);
+
+    int nfds = 0;
+    if (dw->fd >= 0) {
+        FD_SET(dw->fd, &fds);
+        nfds = dw->fd;
+    }
+    if (fd >= 0) {
+        FD_SET(fd, &fds);
+        if (fd > nfds)
+            nfds = fd;
+    }
+
+    int rv = select(nfds + 1, &fds, NULL, NULL, NULL);
+    if (rv == -1) {
+        *err = dg_error_new_errno(DG_ERROR_DEBUGWIRE, errno, "Failed select");
+        return false;
+    }
+    if (rv == 0) {
+        *err = dg_error_new(DG_ERROR_DEBUGWIRE, "Failed select, no data");
+        return false;
+    }
+
+    return true;
+}
+
+
 static int
 handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
 {
@@ -86,6 +123,20 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
     }
 
     switch (cmd[0]) {
+        case 0x03:
+            {
+                uint8_t b = dg_serial_send_break(dw->fd, err);
+                if (*err != NULL)
+                    return 1;
+
+                if (b != 0x55) {
+                    *err = dg_error_new_printf(DG_ERROR_GDBSERVER,
+                        "Bad break response from MCU. Expected 0x55, got 0x%02x", b);
+                    return 1;
+                }
+            }
+            return 0;
+
         case 'q':
             if (0 == strcmp(cmd, "qAttached")) {
                 write_response(fd, "1");
@@ -182,6 +233,14 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
             write_response(fd, "S00");
             return 0;
 
+        case 'c':
+            if (!dg_debugwire_continue(dw, err) || *err != NULL)
+                return 1;
+            if (!wait(dw, fd, err) || *err != NULL)
+                return 1;
+            write_response(fd, "S00");
+            return 0;
+
         case '?':
             write_response(fd, "S00");
             return 0;
@@ -216,6 +275,15 @@ handle_client(dg_debugwire_t *dw, int fd, dg_error_t **err)
             *err = dg_error_new_errno(DG_ERROR_GDBSERVER, errno,
                 "Failed to read from client socket");
             return 1;
+        }
+
+        if (b == 0x03) {
+            dg_debug_printf("$< ctrl-c\n");
+            char cmd[2] = {0x03, 0};
+            int rv = handle_command(dw, fd, cmd, err);
+            if (rv != 0 || *err != NULL)
+                return rv;
+            continue;
         }
 
         switch (s) {

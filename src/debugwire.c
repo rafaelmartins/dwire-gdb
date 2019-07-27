@@ -574,3 +574,17 @@ dg_debugwire_step(dg_debugwire_t *dw, dg_error_t **err)
 
     return true;
 }
+
+
+bool
+dg_debugwire_continue(dg_debugwire_t *dw, dg_error_t **err)
+{
+    if (dw == NULL || err == NULL || *err != NULL)
+        return false;
+
+    const uint8_t b[2] = {
+        dw->timer ? 0x40 : 0x60,
+        0x30,
+    };
+    return 2 == dg_serial_write(dw->fd, b, 2, err) && *err == NULL;
+}

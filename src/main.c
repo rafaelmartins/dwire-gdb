@@ -27,7 +27,7 @@ print_help(const char *host, const char *port)
 {
     printf(
         "usage:\n"
-        "    dwire-gdb [-h|-v|-i|-f|-z] [-d] [-s SERIAL_PORT] [-b BAUDRATE]\n"
+        "    dwire-gdb [-h|-v|-i|-f|-z] [-d] [-m] [-s SERIAL_PORT] [-b BAUDRATE]\n"
         "              [-t HOST] [-p PORT]\n"
         "              - A GDB server for AVR 8 bit microcontrollers, using\n"
         "                debugWire protocol through USB-to-TTL adapters.\n"
@@ -39,6 +39,7 @@ print_help(const char *host, const char *port)
         "    -f              detect target mcu fuses and exit\n"
         "    -z              disable debugWire and exit\n"
         "    -d              enable debug\n"
+        "    -m              disable timers\n"
         "    -s SERIAL_PORT  set serial port to connect to (e.g. /dev/ttyUSB0,\n"
         "                    default: detect)\n"
         "    -b BAUDRATE     set serial port baud rate (default: detect)\n"
@@ -51,7 +52,7 @@ print_help(const char *host, const char *port)
 static void
 print_usage(void)
 {
-    printf("usage: dwire-gdb [-h|-v|-i|-f|-z] [-d] [-s SERIAL_PORT] [-b BAUDRATE] "
+    printf("usage: dwire-gdb [-h|-v|-i|-f|-z] [-d] [-m] [-s SERIAL_PORT] [-b BAUDRATE] "
         "[-t HOST] [-p PORT]\n");
 }
 
@@ -66,6 +67,7 @@ main(int argc, char **argv)
     bool fuses = false;
     bool disable = false;
     bool debug = false;
+    bool timer = true;
 
     char *serial_port = NULL;
     uint32_t baudrate = 0;
@@ -95,6 +97,9 @@ main(int argc, char **argv)
                     break;
                 case 'd':
                     debug = true;
+                    break;
+                case 'm':
+                    timer = false;
                     break;
                 case 's':
                     if (argv[i][2] != '\0')
@@ -135,6 +140,7 @@ main(int argc, char **argv)
     dg_debugwire_t *dw = dg_debugwire_new(serial_port, baudrate, &err);
     if (dw == NULL || err != NULL)
         goto cleanup;
+    dw->timer = timer;
 
     if (identify) {
         printf("Target device: %s\n", dw->dev->name);
