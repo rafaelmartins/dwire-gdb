@@ -26,6 +26,8 @@ typedef struct {
     int fd;
     const dg_debugwire_device_t *dev;
     bool timer;
+    uint16_t hw_breakpoint;
+    bool hw_breakpoint_set;
 } dg_debugwire_t;
 
 dg_debugwire_t* dg_debugwire_new(const char *device, uint32_t baudrate,

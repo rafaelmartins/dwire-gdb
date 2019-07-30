@@ -184,6 +184,9 @@ dg_debugwire_new(const char *device, uint32_t baudrate, dg_error_t **err)
         dg_debugwire_free(rv);
         return NULL;
     }
+    rv->timer = false;
+    rv->hw_breakpoint_set = false;
+    rv->hw_breakpoint = 0;
 
     return rv;
 }
@@ -582,9 +585,15 @@ dg_debugwire_continue(dg_debugwire_t *dw, dg_error_t **err)
     if (dw == NULL || err == NULL || *err != NULL)
         return false;
 
-    const uint8_t b[2] = {
-        dw->timer ? 0x40 : 0x60,
-        0x30,
-    };
-    return 2 == dg_serial_write(dw->fd, b, 2, err) && *err == NULL;
+    size_t l = dw->hw_breakpoint_set ? 5 : 2;
+    size_t i = 0;
+    uint8_t b[l];
+    if (dw->hw_breakpoint_set) {
+        b[i++] = 0xd1;
+        b[i++] = dw->hw_breakpoint >> 8;
+        b[i++] = dw->hw_breakpoint;
+    }
+    b[i++] = dw->hw_breakpoint_set ? (dw->timer ? 0x41 : 0x61) : (dw->timer ? 0x40 : 0x60);
+    b[i++] = 0x30;
+    return l == dg_serial_write(dw->fd, b, l, err) && *err == NULL;
 }

@@ -101,12 +101,23 @@ wait(dg_debugwire_t *dw, int fd, dg_error_t **err)
 
     int rv = select(nfds + 1, &fds, NULL, NULL, NULL);
     if (rv == -1) {
-        *err = dg_error_new_errno(DG_ERROR_DEBUGWIRE, errno, "Failed select");
+        *err = dg_error_new_errno(DG_ERROR_GDBSERVER, errno, "Failed select");
         return false;
     }
     if (rv == 0) {
-        *err = dg_error_new(DG_ERROR_DEBUGWIRE, "Failed select, no data");
+        *err = dg_error_new(DG_ERROR_GDBSERVER, "Failed select, no data");
         return false;
+    }
+    if (FD_ISSET(dw->fd, &fds) && dw->hw_breakpoint_set) {
+        uint8_t b = dg_serial_recv_break(dw->fd, err);
+        if (*err != NULL)
+            return false;
+
+        if (b != 0x55) {
+            *err = dg_error_new_printf(DG_ERROR_GDBSERVER,
+                "Bad break received from MCU. Expected 0x55, got 0x%02x", b);
+            return false;
+        }
     }
 
     return true;
@@ -121,6 +132,8 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
         *err = dg_error_new(DG_ERROR_GDBSERVER, "Empty command");
         return 1;
     }
+
+    bool add = false;
 
     switch (cmd[0]) {
         case 0x03:
@@ -194,6 +207,7 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
 
                 uint32_t addr = strtoul(pieces[0], NULL, 16);
                 uint16_t count = strtoul(pieces[1], NULL, 16);
+                dg_strv_free(pieces);
 
                 if (!dg_debugwire_cache_pc(dw, err) || *err != NULL)
                     return 1;
@@ -240,6 +254,42 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
                 return 1;
             write_response(fd, "S00");
             return 0;
+
+        case 'Z':
+            add = true;
+        case 'z':
+            {
+                char **pieces = dg_str_split(cmd + 1, ',', 0);
+                if (3 > dg_strv_length(pieces)) {
+                    *err = dg_error_new_printf(DG_ERROR_GDBSERVER,
+                        "Malformed breakpoint request: %s", cmd);
+                    dg_strv_free(pieces);
+                    return 1;
+                }
+
+                switch (pieces[0][0]) {
+                    case '1':
+                        if (add) {
+                            if (dw->hw_breakpoint_set) {
+                                write_response(fd, "E01");
+                                dg_strv_free(pieces);
+                                return 0;
+                            }
+                            dw->hw_breakpoint = strtoul(pieces[1], NULL, 16) / strtoul(pieces[2], NULL, 16);
+                            dw->hw_breakpoint_set = true;
+                        }
+                        else {
+                            dw->hw_breakpoint = 0;
+                            dw->hw_breakpoint_set = false;
+                        }
+                        write_response(fd, "OK");
+                        dg_strv_free(pieces);
+                        return 0;
+                }
+
+                dg_strv_free(pieces);
+            }
+            break;
 
         case '?':
             write_response(fd, "S00");
