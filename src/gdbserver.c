@@ -8,6 +8,7 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -200,7 +201,7 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
                 char **pieces = dg_str_split(cmd + 1, ',', 2);
                 if (2 != dg_strv_length(pieces)) {
                     *err = dg_error_new_printf(DG_ERROR_GDBSERVER,
-                        "Malformed memory request: %s", cmd);
+                        "Malformed memory read request: %s", cmd);
                     dg_strv_free(pieces);
                     return 1;
                 }
@@ -217,12 +218,16 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
 
                 uint8_t buf[count];
                 if (addr < 0x800000) {
-                    if (!dg_debugwire_read_flash(dw, (uint8_t) addr, buf, count, err) || *err != NULL)
+                    if (!dg_debugwire_read_flash(dw, (uint16_t) addr, buf, count, err) || *err != NULL)
+                        return 1;
+                }
+                else if (addr < 0x810000) {
+                    if (!dg_debugwire_read_sram(dw, (uint16_t) addr, buf, count, err) || *err != NULL)
                         return 1;
                 }
                 else {
-                    if (!dg_debugwire_read_sram(dw, (uint8_t) addr, buf, count, err) || *err != NULL)
-                        return 1;
+                    write_response(fd, "E01");
+                    return 1;
                 }
 
                 if (!dg_debugwire_restore_yz(dw, err) || *err != NULL)

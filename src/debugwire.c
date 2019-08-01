@@ -397,7 +397,7 @@ dg_debugwire_read_sram(dg_debugwire_t *dw, uint16_t start, uint8_t *values,
     if (!dg_debugwire_write_registers(dw, 30, b, 2, err) || *err != NULL)
         return false;
 
-    uint8_t c[10] = {
+    const uint8_t c[10] = {
         0x66,
         0xc2, 0x00,
         0xd0, 0x00, 0x00,
@@ -419,7 +419,7 @@ dg_debugwire_read_flash(dg_debugwire_t *dw, uint16_t start, uint8_t *values,
     if (dw == NULL || err == NULL || *err != NULL)
         return false;
 
-    uint8_t b[2] = {
+    const uint8_t b[2] = {
         start, start >> 8,
     };
 
