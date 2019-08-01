@@ -290,6 +290,10 @@ handle_command(dg_debugwire_t *dw, int fd, const char *cmd, dg_error_t **err)
                         write_response(fd, "OK");
                         dg_strv_free(pieces);
                         return 0;
+                    default:
+                        write_response(fd, "E01");
+                        dg_strv_free(pieces);
+                        return 1;
                 }
 
                 dg_strv_free(pieces);
